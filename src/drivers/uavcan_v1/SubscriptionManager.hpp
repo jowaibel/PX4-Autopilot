@@ -78,11 +78,12 @@ private:
 	UavcanDynamicPortSubscriber *_dynsubscribers {NULL};
 
 	UavcanHeartbeatSubscriber _heartbeat_sub {_canard_instance};
+
 	// GetInfo response
 	UavcanGetInfoResponse _getinfo_rsp {_canard_instance};
 
 	// Process register requests
-	UavcanAccessResponse  _access_rsp {_canard_instance, _param_manager};
+	// UavcanAccessResponse  _access_rsp {_canard_instance, _param_manager};
 
 	const UavcanDynSubBinder _uavcan_subs[6] {
 		{

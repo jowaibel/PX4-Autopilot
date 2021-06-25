@@ -58,7 +58,7 @@ void SubscriptionManager::subscribe()
 {
 	_heartbeat_sub.subscribe();
 	_getinfo_rsp.subscribe();
-	_access_rsp.subscribe();
+	// _access_rsp.subscribe();
 
 	for (auto &sub : _uavcan_subs) {
 		param_t param_handle = param_find(sub.px4_name);
@@ -88,10 +88,20 @@ void SubscriptionManager::subscribe()
 
 void SubscriptionManager::printInfo()
 {
+	UavcanDynamicPortSubscriber *dynsub = _dynsubscribers;
 
+	while (dynsub != NULL) {
+		dynsub->printInfo();
+		dynsub = dynsub->next();
+	}
 }
 
 void SubscriptionManager::updateParams()
 {
-	//TODO dynamically update params and unsubscribe
+	UavcanDynamicPortSubscriber *dynsub = _dynsubscribers;
+
+	while (dynsub != NULL) {
+		dynsub->updateParam();
+		dynsub = dynsub->next();
+	}
 }
