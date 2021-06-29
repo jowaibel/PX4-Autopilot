@@ -117,7 +117,7 @@ void BMI088_Gyroscope::RunImpl()
 
 		} else {
 			// RESET not complete
-			if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
+			if ((now - _reset_timestamp) > 1000_ms) {
 				PX4_DEBUG("Reset failed, retrying");
 				_state = STATE::RESET;
 				ScheduleDelayed(100_ms);
@@ -150,7 +150,7 @@ void BMI088_Gyroscope::RunImpl()
 
 		} else {
 			// CONFIGURE not complete
-			if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
+			if ((now - _reset_timestamp) > 1000_ms) {
 				PX4_DEBUG("Configure failed, resetting");
 				_state = STATE::RESET;
 
@@ -164,6 +164,8 @@ void BMI088_Gyroscope::RunImpl()
 		break;
 
 	case STATE::FIFO_READ: {
+			hrt_abstime timestamp_sample = now;
+
 			if (_data_ready_interrupt_enabled) {
 				// scheduled from interrupt if _drdy_fifo_read_samples was set
 				if (_drdy_fifo_read_samples.fetch_and(0) != _fifo_samples) {
@@ -194,7 +196,16 @@ void BMI088_Gyroscope::RunImpl()
 					perf_count(_fifo_empty_perf);
 
 				} else if (fifo_frame_counter >= 1) {
-					if (FIFORead(now, fifo_frame_counter)) {
+
+					uint8_t samples = fifo_frame_counter;
+
+					// to tolerate occasional minor jitter leave sample to next iteration if behind by 1
+					if (samples == _fifo_samples + 1) {
+						timestamp_sample -= FIFO_SAMPLE_DT;
+						samples--;
+					}
+
+					if (FIFORead(timestamp_sample, samples)) {
 						success = true;
 
 						if (_failure_count > 0) {
@@ -214,7 +225,7 @@ void BMI088_Gyroscope::RunImpl()
 				}
 			}
 
-			if (!success || hrt_elapsed_time(&_last_config_check_timestamp) > 100_ms) {
+			if (!success || ((now - _reset_timestamp) > 100_ms)) {
 				// check configuration registers periodically or immediately following any failure
 				if (RegisterCheck(_register_cfg[_checked_register])) {
 					_last_config_check_timestamp = now;
@@ -318,7 +329,7 @@ int BMI088_Gyroscope::DataReadyInterruptCallback(int irq, void *context, void *a
 
 void BMI088_Gyroscope::DataReady()
 {
-	uint32_t expected = 0;
+	int32_t expected = 0;
 
 	if (_drdy_fifo_read_samples.compare_exchange(&expected, _fifo_samples)) {
 		ScheduleNow();
@@ -413,8 +424,8 @@ bool BMI088_Gyroscope::FIFORead(const hrt_abstime &timestamp_sample, uint8_t sam
 		// sensor's frame is +x forward, +y left, +z up
 		//  flip y & z to publish right handed with z down (x forward, y right, z down)
 		gyro.x[i] = gyro_x;
-		gyro.y[i] = (gyro_y == INT16_MIN) ? INT16_MAX : -gyro_y;
-		gyro.z[i] = (gyro_z == INT16_MIN) ? INT16_MAX : -gyro_z;
+		gyro.y[i] = math::negate(gyro_y);
+		gyro.z[i] = math::negate(gyro_z);
 	}
 
 	_px4_gyro.set_error_count(perf_event_count(_bad_register_perf) + perf_event_count(_bad_transfer_perf) +

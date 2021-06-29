@@ -145,7 +145,7 @@ void BMI088_Accelerometer::RunImpl()
 
 		} else {
 			// RESET not complete
-			if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
+			if ((now - _reset_timestamp) > 1000_ms) {
 				PX4_DEBUG("Reset failed, retrying");
 				_state = STATE::RESET;
 				ScheduleDelayed(100_ms);
@@ -178,7 +178,7 @@ void BMI088_Accelerometer::RunImpl()
 
 		} else {
 			// CONFIGURE not complete
-			if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
+			if ((now - _reset_timestamp) > 1000_ms) {
 				PX4_DEBUG("Configure failed, resetting");
 				_state = STATE::RESET;
 
@@ -294,7 +294,7 @@ int BMI088_Accelerometer::DataReadyInterruptCallback(int irq, void *context, voi
 
 void BMI088_Accelerometer::DataReady()
 {
-	uint32_t expected = 0;
+	int32_t expected = 0;
 
 	if (_drdy_fifo_read_samples.compare_exchange(&expected, _fifo_samples)) {
 		ScheduleNow();
@@ -415,8 +415,8 @@ bool BMI088_Accelerometer::FIFORead(const hrt_abstime &timestamp_sample, uint8_t
 				// sensor's frame is +x forward, +y left, +z up
 				//  flip y & z to publish right handed with z down (x forward, y right, z down)
 				accel.x[accel.samples] = accel_x;
-				accel.y[accel.samples] = (accel_y == INT16_MIN) ? INT16_MAX : -accel_y;
-				accel.z[accel.samples] = (accel_z == INT16_MIN) ? INT16_MAX : -accel_z;
+				accel.y[accel.samples] = math::negate(accel_y);
+				accel.z[accel.samples] = math::negate(accel_z);
 				accel.samples++;
 
 				fifo_buffer_index += 7; // move forward to next record

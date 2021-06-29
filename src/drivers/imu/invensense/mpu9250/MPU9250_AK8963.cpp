@@ -79,11 +79,13 @@ void MPU9250_AK8963::PrintInfo()
 
 void MPU9250_AK8963::Run()
 {
+	const hrt_abstime now = hrt_absolute_time();
+
 	switch (_state) {
 	case STATE::RESET:
 		// CNTL2 SRST: Soft reset
 		_mpu9250.I2CSlaveRegisterWrite(I2C_ADDRESS_DEFAULT, (uint8_t)Register::CNTL2, CNTL2_BIT::SRST);
-		_reset_timestamp = hrt_absolute_time();
+		_reset_timestamp = now;
 		_failure_count = 0;
 		_state = STATE::READ_WHO_AM_I;
 		ScheduleDelayed(100_ms);
@@ -123,7 +125,7 @@ void MPU9250_AK8963::Run()
 
 			} else {
 				// RESET not complete
-				if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
+				if ((now - _reset_timestamp) > 1000_ms) {
 					PX4_DEBUG("AK8963 reset failed, retrying");
 					_state = STATE::RESET;
 					ScheduleDelayed(1000_ms);

@@ -138,7 +138,7 @@ void BMI088_Accelerometer::RunImpl()
 
 		} else {
 			// RESET not complete
-			if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
+			if ((now - _reset_timestamp) > 1000_ms) {
 				PX4_DEBUG("Reset failed, retrying");
 				_state = STATE::RESET;
 				ScheduleDelayed(100_ms);
@@ -171,7 +171,7 @@ void BMI088_Accelerometer::RunImpl()
 
 		} else {
 			// CONFIGURE not complete
-			if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
+			if ((now - _reset_timestamp) > 1000_ms) {
 				PX4_DEBUG("Configure failed, resetting");
 				_state = STATE::RESET;
 
@@ -185,7 +185,8 @@ void BMI088_Accelerometer::RunImpl()
 		break;
 
 	case STATE::FIFO_READ: {
-			uint32_t samples = 0;
+			hrt_abstime timestamp_sample = now;
+			uint8_t samples = 0;
 
 			if (_data_ready_interrupt_enabled) {
 				// scheduled from interrupt if _drdy_fifo_read_samples was set as expected
@@ -215,6 +216,12 @@ void BMI088_Accelerometer::RunImpl()
 				} else {
 					samples = fifo_byte_counter / sizeof(FIFO::DATA);
 
+					// to tolerate occasional minor jitter leave sample to next iteration if behind by 1
+					if (samples == _fifo_samples + 1) {
+						timestamp_sample -= FIFO_SAMPLE_DT;
+						samples--;
+					}
+
 					if (samples > FIFO_MAX_SAMPLES) {
 						// not technically an overflow, but more samples than we expected or can publish
 						FIFOReset();
@@ -227,7 +234,7 @@ void BMI088_Accelerometer::RunImpl()
 			bool success = false;
 
 			if (samples >= 1) {
-				if (FIFORead(now, samples)) {
+				if (FIFORead(timestamp_sample, samples)) {
 					success = true;
 
 					if (_failure_count > 0) {
@@ -246,7 +253,7 @@ void BMI088_Accelerometer::RunImpl()
 				}
 			}
 
-			if (!success || hrt_elapsed_time(&_last_config_check_timestamp) > 100_ms) {
+			if (!success || ((now - _reset_timestamp) > 100_ms)) {
 				// check configuration registers periodically or immediately following any failure
 				if (RegisterCheck(_register_cfg[_checked_register])) {
 					_last_config_check_timestamp = now;
@@ -260,7 +267,7 @@ void BMI088_Accelerometer::RunImpl()
 
 			} else {
 				// periodically update temperature (~1 Hz)
-				if (hrt_elapsed_time(&_temperature_update_timestamp) >= 1_s) {
+				if ((now - _reset_timestamp) >= 1_s) {
 					UpdateTemperature();
 					_temperature_update_timestamp = now;
 				}
@@ -361,7 +368,7 @@ int BMI088_Accelerometer::DataReadyInterruptCallback(int irq, void *context, voi
 
 void BMI088_Accelerometer::DataReady()
 {
-	uint32_t expected = 0;
+	int32_t expected = 0;
 
 	if (_drdy_fifo_read_samples.compare_exchange(&expected, _fifo_samples)) {
 		ScheduleNow();
@@ -501,8 +508,8 @@ bool BMI088_Accelerometer::FIFORead(const hrt_abstime &timestamp_sample, uint8_t
 				// sensor's frame is +x forward, +y left, +z up
 				//  flip y & z to publish right handed with z down (x forward, y right, z down)
 				accel.x[accel.samples] = accel_x;
-				accel.y[accel.samples] = (accel_y == INT16_MIN) ? INT16_MAX : -accel_y;
-				accel.z[accel.samples] = (accel_z == INT16_MIN) ? INT16_MAX : -accel_z;
+				accel.y[accel.samples] = math::negate(accel_y);
+				accel.z[accel.samples] = math::negate(accel_z);
 				accel.samples++;
 
 				fifo_buffer_index += 7; // move forward to next record

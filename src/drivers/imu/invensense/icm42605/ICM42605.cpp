@@ -144,7 +144,7 @@ void ICM42605::RunImpl()
 
 		} else {
 			// RESET not complete
-			if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
+			if ((now - _reset_timestamp) > 1000_ms) {
 				PX4_DEBUG("Reset failed, retrying");
 				_state = STATE::RESET;
 				ScheduleDelayed(100_ms);
@@ -177,7 +177,7 @@ void ICM42605::RunImpl()
 
 		} else {
 			// CONFIGURE not complete
-			if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
+			if ((now - _reset_timestamp) > 1000_ms) {
 				PX4_DEBUG("Configure failed, resetting");
 				_state = STATE::RESET;
 
@@ -191,6 +191,7 @@ void ICM42605::RunImpl()
 		break;
 
 	case STATE::FIFO_READ: {
+			hrt_abstime timestamp_sample = now;
 			uint32_t samples = 0;
 
 			if (_data_ready_interrupt_enabled) {
@@ -221,6 +222,12 @@ void ICM42605::RunImpl()
 					// FIFO count (size in bytes)
 					samples = (fifo_count / sizeof(FIFO::DATA));
 
+					// to tolerate occasional minor jitter leave sample to next iteration if behind by 1
+					if (samples == _fifo_gyro_samples + 1) {
+						timestamp_sample -= FIFO_SAMPLE_DT;
+						samples--;
+					}
+
 					if (samples > FIFO_MAX_SAMPLES) {
 						// not technically an overflow, but more samples than we expected or can publish
 						FIFOReset();
@@ -233,7 +240,7 @@ void ICM42605::RunImpl()
 			bool success = false;
 
 			if (samples >= 1) {
-				if (FIFORead(now, samples)) {
+				if (FIFORead(timestamp_sample, samples)) {
 					success = true;
 
 					if (_failure_count > 0) {
@@ -252,7 +259,7 @@ void ICM42605::RunImpl()
 				}
 			}
 
-			if (!success || hrt_elapsed_time(&_last_config_check_timestamp) > 100_ms) {
+			if (!success || ((now - _reset_timestamp) > 100_ms)) {
 				// check configuration registers periodically or immediately following any failure
 				if (RegisterCheck(_register_bank0_cfg[_checked_register_bank0])
 				   ) {
@@ -267,7 +274,7 @@ void ICM42605::RunImpl()
 
 			} else {
 				// periodically update temperature (~1 Hz)
-				if (hrt_elapsed_time(&_temperature_update_timestamp) >= 1_s) {
+				if ((now - _reset_timestamp) >= 1_s) {
 					UpdateTemperature();
 					_temperature_update_timestamp = now;
 				}
@@ -411,7 +418,7 @@ int ICM42605::DataReadyInterruptCallback(int irq, void *context, void *arg)
 
 void ICM42605::DataReady()
 {
-	uint32_t expected = 0;
+	int32_t expected = 0;
 
 	if (_drdy_fifo_read_samples.compare_exchange(&expected, _fifo_gyro_samples)) {
 		ScheduleNow();
@@ -600,8 +607,8 @@ void ICM42605::ProcessAccel(const hrt_abstime &timestamp_sample, const FIFO::DAT
 		// sensor's frame is +x forward, +y left, +z up
 		//  flip y & z to publish right handed with z down (x forward, y right, z down)
 		accel.x[accel.samples] = accel_x;
-		accel.y[accel.samples] = (accel_y == INT16_MIN) ? INT16_MAX : -accel_y;
-		accel.z[accel.samples] = (accel_z == INT16_MIN) ? INT16_MAX : -accel_z;
+		accel.y[accel.samples] = math::negate(accel_y);
+		accel.z[accel.samples] = math::negate(accel_z);
 		accel.samples++;
 	}
 
@@ -628,8 +635,8 @@ void ICM42605::ProcessGyro(const hrt_abstime &timestamp_sample, const FIFO::DATA
 		// sensor's frame is +x forward, +y left, +z up
 		//  flip y & z to publish right handed with z down (x forward, y right, z down)
 		gyro.x[i] = gyro_x;
-		gyro.y[i] = (gyro_y == INT16_MIN) ? INT16_MAX : -gyro_y;
-		gyro.z[i] = (gyro_z == INT16_MIN) ? INT16_MAX : -gyro_z;
+		gyro.y[i] = math::negate(gyro_y);
+		gyro.z[i] = math::negate(gyro_z);
 	}
 
 	_px4_gyro.set_error_count(perf_event_count(_bad_register_perf) + perf_event_count(_bad_transfer_perf) +

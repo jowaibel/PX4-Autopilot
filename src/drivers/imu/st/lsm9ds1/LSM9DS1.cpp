@@ -135,7 +135,7 @@ void LSM9DS1::RunImpl()
 
 		} else {
 			// RESET not complete
-			if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
+			if ((now - _reset_timestamp) > 1000_ms) {
 				PX4_DEBUG("Reset failed, retrying");
 				_state = STATE::RESET;
 				ScheduleDelayed(100_ms);
@@ -157,7 +157,7 @@ void LSM9DS1::RunImpl()
 
 		} else {
 			// CONFIGURE not complete
-			if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
+			if ((now - _reset_timestamp) > 1000_ms) {
 				PX4_DEBUG("Configure failed, resetting");
 				_state = STATE::RESET;
 
@@ -171,6 +171,8 @@ void LSM9DS1::RunImpl()
 		break;
 
 	case STATE::FIFO_READ: {
+			hrt_abstime timestamp_sample = now;
+
 			// always check current FIFO count
 			bool success = false;
 			// Number of unread words (16-bit axes) stored in FIFO.
@@ -186,13 +188,19 @@ void LSM9DS1::RunImpl()
 				perf_count(_fifo_empty_perf);
 
 			} else {
+				// to tolerate occasional minor jitter leave sample to next iteration if behind by 1
+				if (samples == _fifo_gyro_samples + 1) {
+					timestamp_sample -= FIFO_SAMPLE_DT;
+					samples--;
+				}
+
 				if (samples > FIFO_MAX_SAMPLES) {
 					// not technically an overflow, but more samples than we expected or can publish
 					FIFOReset();
 					perf_count(_fifo_overflow_perf);
 
 				} else if (samples >= 1) {
-					if (FIFORead(now, samples)) {
+					if (FIFORead(timestamp_sample, samples)) {
 						success = true;
 
 						if (_failure_count > 0) {
@@ -212,7 +220,7 @@ void LSM9DS1::RunImpl()
 				}
 			}
 
-			if (!success || hrt_elapsed_time(&_last_config_check_timestamp) > 100_ms) {
+			if (!success || ((now - _reset_timestamp) > 100_ms)) {
 				// check configuration registers periodically or immediately following any failure
 				if (RegisterCheck(_register_cfg[_checked_register])) {
 					_last_config_check_timestamp = now;
@@ -226,7 +234,7 @@ void LSM9DS1::RunImpl()
 
 			} else {
 				// periodically update temperature (~1 Hz)
-				if (hrt_elapsed_time(&_temperature_update_timestamp) >= 1_s) {
+				if ((now - _reset_timestamp) >= 1_s) {
 					UpdateTemperature();
 					_temperature_update_timestamp = now;
 				}
@@ -353,7 +361,7 @@ bool LSM9DS1::FIFORead(const hrt_abstime &timestamp_sample, uint8_t samples)
 				//  flip y & z to publish right handed with z down (x forward, y right, z down)
 				gyro.x[gyro.samples] = gyro_x;
 				gyro.y[gyro.samples] = gyro_y;
-				gyro.z[gyro.samples] = (gyro_z == INT16_MIN) ? INT16_MAX : -gyro_z;
+				gyro.z[gyro.samples] = math::negate(gyro_z);
 				gyro.samples++;
 
 			} else {
@@ -381,7 +389,7 @@ bool LSM9DS1::FIFORead(const hrt_abstime &timestamp_sample, uint8_t samples)
 				//  flip y & z to publish right handed with z down (x forward, y right, z down)
 				accel.x[accel.samples] = accel_x;
 				accel.y[accel.samples] = accel_y;
-				accel.z[accel.samples] = (accel_z == INT16_MIN) ? INT16_MAX : -accel_z;
+				accel.z[accel.samples] = math::negate(accel_z);
 				accel.samples++;
 
 			} else {

@@ -183,7 +183,7 @@ void MPU6500::RunImpl()
 
 		} else {
 			// RESET not complete
-			if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
+			if ((now - _reset_timestamp) > 1000_ms) {
 				PX4_DEBUG("Reset failed, retrying");
 				_state = STATE::RESET;
 				ScheduleDelayed(100_ms);
@@ -216,7 +216,7 @@ void MPU6500::RunImpl()
 
 		} else {
 			// CONFIGURE not complete
-			if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
+			if ((now - _reset_timestamp) > 1000_ms) {
 				PX4_DEBUG("Configure failed, resetting");
 				_state = STATE::RESET;
 
@@ -230,6 +230,8 @@ void MPU6500::RunImpl()
 		break;
 
 	case STATE::FIFO_READ: {
+			hrt_abstime timestamp_sample = now;
+
 			if (_data_ready_interrupt_enabled) {
 				// scheduled from interrupt if _drdy_fifo_read_samples was set
 				if (_drdy_fifo_read_samples.fetch_and(0) != _fifo_gyro_samples) {
@@ -253,16 +255,21 @@ void MPU6500::RunImpl()
 
 			} else {
 				// FIFO count (size in bytes) should be a multiple of the FIFO::DATA structure
-				const uint8_t samples = (fifo_count / sizeof(FIFO::DATA) / SAMPLES_PER_TRANSFER) *
-							SAMPLES_PER_TRANSFER; // round down to nearest
+				uint8_t samples = fifo_count / sizeof(FIFO::DATA);
+
+				// to tolerate occasional minor jitter leave sample to next iteration if behind by 1
+				if (samples == _fifo_gyro_samples + 1) {
+					timestamp_sample -= FIFO_SAMPLE_DT;
+					samples--;
+				}
 
 				if (samples > FIFO_MAX_SAMPLES) {
 					// not technically an overflow, but more samples than we expected or can publish
 					FIFOReset();
 					perf_count(_fifo_overflow_perf);
 
-				} else if (samples >= 1) {
-					if (FIFORead(now, samples)) {
+				} else if (samples >= SAMPLES_PER_TRANSFER) {
+					if (FIFORead(timestamp_sample, samples)) {
 						success = true;
 
 						if (_failure_count > 0) {
@@ -282,7 +289,7 @@ void MPU6500::RunImpl()
 				}
 			}
 
-			if (!success || hrt_elapsed_time(&_last_config_check_timestamp) > 100_ms) {
+			if (!success || ((now - _reset_timestamp) > 100_ms)) {
 				// check configuration registers periodically or immediately following any failure
 				if (RegisterCheck(_register_cfg[_checked_register])) {
 					_last_config_check_timestamp = now;
@@ -296,7 +303,7 @@ void MPU6500::RunImpl()
 
 			} else {
 				// periodically update temperature (~1 Hz)
-				if (hrt_elapsed_time(&_temperature_update_timestamp) >= 1_s) {
+				if ((now - _reset_timestamp) >= 1_s) {
 					UpdateTemperature();
 					_temperature_update_timestamp = now;
 				}
@@ -404,13 +411,13 @@ int MPU6500::DataReadyInterruptCallback(int irq, void *context, void *arg)
 
 void MPU6500::DataReady()
 {
-	uint32_t expected = 0;
+	int32_t expected = 0;
 
 	// at least the required number of samples in the FIFO
 	if (((_drdy_count.fetch_add(1) + 1) >= _fifo_gyro_samples)
 	    && _drdy_fifo_read_samples.compare_exchange(&expected, _fifo_gyro_samples)) {
 
-		_drdy_count.store(0);
+		_drdy_count.fetch_sub(_fifo_gyro_samples);
 		ScheduleNow();
 	}
 }
@@ -577,8 +584,8 @@ bool MPU6500::ProcessAccel(const hrt_abstime &timestamp_sample, const FIFO::DATA
 		// sensor's frame is +x forward, +y left, +z up
 		//  flip y & z to publish right handed with z down (x forward, y right, z down)
 		accel.x[accel.samples] = accel_x;
-		accel.y[accel.samples] = (accel_y == INT16_MIN) ? INT16_MAX : -accel_y;
-		accel.z[accel.samples] = (accel_z == INT16_MIN) ? INT16_MAX : -accel_z;
+		accel.y[accel.samples] = math::negate(accel_y);
+		accel.z[accel.samples] = math::negate(accel_z);
 		accel.samples++;
 	}
 
@@ -607,8 +614,8 @@ void MPU6500::ProcessGyro(const hrt_abstime &timestamp_sample, const FIFO::DATA 
 		// sensor's frame is +x forward, +y left, +z up
 		//  flip y & z to publish right handed with z down (x forward, y right, z down)
 		gyro.x[i] = gyro_x;
-		gyro.y[i] = (gyro_y == INT16_MIN) ? INT16_MAX : -gyro_y;
-		gyro.z[i] = (gyro_z == INT16_MIN) ? INT16_MAX : -gyro_z;
+		gyro.y[i] = math::negate(gyro_y);
+		gyro.z[i] = math::negate(gyro_z);
 	}
 
 	_px4_gyro.set_error_count(perf_event_count(_bad_register_perf) + perf_event_count(_bad_transfer_perf) +

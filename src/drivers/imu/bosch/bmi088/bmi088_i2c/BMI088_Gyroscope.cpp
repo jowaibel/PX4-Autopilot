@@ -124,7 +124,7 @@ void BMI088_Gyroscope::RunImpl()
 
 		} else {
 			// RESET not complete
-			if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
+			if ((now - _reset_timestamp) > 1000_ms) {
 				PX4_DEBUG("Reset failed, retrying");
 				_state = STATE::RESET;
 				ScheduleDelayed(100_ms);
@@ -157,7 +157,7 @@ void BMI088_Gyroscope::RunImpl()
 
 		} else {
 			// CONFIGURE not complete
-			if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
+			if ((now - _reset_timestamp) > 1000_ms) {
 				PX4_DEBUG("Configure failed, resetting");
 				_state = STATE::RESET;
 
@@ -263,7 +263,7 @@ int BMI088_Gyroscope::DataReadyInterruptCallback(int irq, void *context, void *a
 
 void BMI088_Gyroscope::DataReady()
 {
-	uint32_t expected = 0;
+	int32_t expected = 0;
 
 	if (_drdy_fifo_read_samples.compare_exchange(&expected, _fifo_samples)) {
 		ScheduleNow();
@@ -360,8 +360,8 @@ bool BMI088_Gyroscope::FIFORead(const hrt_abstime &timestamp_sample, uint8_t sam
 		// sensor's frame is +x forward, +y left, +z up
 		//  flip y & z to publish right handed with z down (x forward, y right, z down)
 		gyro.x[i] = gyro_x;
-		gyro.y[i] = (gyro_y == INT16_MIN) ? INT16_MAX : -gyro_y;
-		gyro.z[i] = (gyro_z == INT16_MIN) ? INT16_MAX : -gyro_z;
+		gyro.y[i] = math::negate(gyro_y);
+		gyro.z[i] = math::negate(gyro_z);
 	}
 
 	_px4_gyro.set_error_count(perf_event_count(_bad_register_perf) + perf_event_count(_bad_transfer_perf) +
@@ -448,8 +448,8 @@ bool BMI088_Gyroscope::NormalRead(const hrt_abstime &timestamp_sample)
 	// sensor's frame is +x forward, +y left, +z up
 	//  flip y & z to publish right handed with z down (x forward, y right, z down)
 	x = gyro_x;
-	y = (gyro_y == INT16_MIN) ? INT16_MAX : -gyro_y;
-	z = (gyro_z == INT16_MIN) ? INT16_MAX : -gyro_z;
+	y = math::negate(gyro_y);
+	z = math::negate(gyro_z);
 
 	_px4_gyro.update(timestamp_sample, x, y, z);
 
@@ -498,8 +498,8 @@ bool BMI088_Gyroscope::SimpleFIFORead(const hrt_abstime &timestamp_sample)
 		};
 
 		gyro.x[i] = xyz[0];
-		gyro.y[i] = (xyz[1] == INT16_MIN) ? INT16_MAX : -xyz[1];
-		gyro.z[i] = (xyz[2] == INT16_MIN) ? INT16_MAX : -xyz[2];
+		gyro.y[i] = math::negate(xyz[1]);
+		gyro.z[i] = math::negate(xyz[2]);
 		gyro.samples++;
 	}
 

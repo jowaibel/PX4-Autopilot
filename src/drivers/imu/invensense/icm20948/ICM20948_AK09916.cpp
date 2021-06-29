@@ -79,11 +79,13 @@ void ICM20948_AK09916::PrintInfo()
 
 void ICM20948_AK09916::Run()
 {
+	const hrt_abstime now = hrt_absolute_time();
+
 	switch (_state) {
 	case STATE::RESET:
 		// CNTL3 SRST: Soft reset
 		_icm20948.I2CSlaveRegisterWrite(I2C_ADDRESS_DEFAULT, (uint8_t)Register::CNTL3, CNTL3_BIT::SRST);
-		_reset_timestamp = hrt_absolute_time();
+		_reset_timestamp = now;
 		_failure_count = 0;
 		_state = STATE::READ_WHO_AM_I;
 		ScheduleDelayed(100_ms);
@@ -109,7 +111,7 @@ void ICM20948_AK09916::Run()
 
 			} else {
 				// RESET not complete
-				if (hrt_elapsed_time(&_reset_timestamp) > 1000_ms) {
+				if ((now - _reset_timestamp) > 1000_ms) {
 					PX4_DEBUG("AK09916 reset failed, retrying");
 					_state = STATE::RESET;
 					ScheduleDelayed(1000_ms);
