@@ -142,7 +142,7 @@ PARAM_DEFINE_FLOAT(SENS_BARO_QNH, 1013.25f);
  * @value 13 Roll 180°, Yaw 225°
  * @value 14 Roll 180°, Yaw 270°
  * @value 15 Roll 180°, Yaw 315°
- * @value 16 Roll 90°
+ * @value 16 Roll 90°, Yaw 180°
  * @value 17 Roll 90°, Yaw 45°
  * @value 18 Roll 90°, Yaw 90°
  * @value 19 Roll 90°, Yaw 135°

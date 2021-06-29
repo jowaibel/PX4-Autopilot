@@ -151,7 +151,10 @@ rotate_3f(enum Rotation rot, float &x, float &y, float &z)
 		}
 
 	case ROTATION_ROLL_90: {
-			tmp = z; z = y; y = -tmp;
+			//tmp = z; z = y; y = -tmp;
+			x = -x;
+			tmp = y; y = z;
+			z = tmp;
 			return;
 		}
 
