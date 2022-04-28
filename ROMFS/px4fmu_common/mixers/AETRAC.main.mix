@@ -1,0 +1,73 @@
+=======================================================
+Custom Mixer for AWE fixed-wing aircraft
+
+12 SEP 2019 - EPFL Automatic Control Lab 
+Johannes Waibel
+jo.waibel@gmail.com
+
+1 Aileron Right
+2 Elevator
+3 Throttle
+4 Rudder
+5 Aileron Left
+6 Coupling Mechanism for Tether
+
+=======================================================
+
+-------------------------------------------------------
+Servo Output Channel 1: Aileron Right
+
+2 Mixing Inputs (M: 2):
+Channel group 0 (vehicle attitude), channel 0: ROLL
+Channel group 0 (vehicle attitude), channel 4: FLAPS
+
+M: 1
+S: 0 0   10000   10000      0  -10000  10000
+# S: 0 4   10000   10000      0  -10000  10000
+
+-------------------------------------------------------
+Servo Output Channel 2: Elevator
+
+1 Mixing Input (M: 1):
+Channel group 0 (vehicle attitude), channel 1: PITCH
+
+M: 1
+S: 0 1  -10000  -10000      0  -10000  10000
+
+-------------------------------------------------------
+Servo Output Channel 3: Thrust
+
+1 Mixing Input (M: 1):
+Channel group 0 (vehicle attitude), channel 3: THRUST
+
+M: 1
+S: 0 3       0  20000  -10000  -10000  10000
+
+-------------------------------------------------------
+Servo Output Channel 4: Rudder
+
+1 Mixing Input (M: 1):
+Channel group 0 (vehicle attitude), channel 2: YAW
+
+M: 1
+S: 0 2   10000   10000      0  -10000  10000
+
+-------------------------------------------------------
+Servo Output Channel 5: Aileron Left
+
+2 Mixing Inputs (M: 2):
+Channel group 0 (vehicle attitude), channel 0: ROLL
+Channel group 0 (vehicle attitude), channel 4: FLAPS
+
+M: 1
+S: 0 0   10000   10000      0  -10000  10000
+# S: 0 4  -10000  -10000      0  -10000  10000
+
+-------------------------------------------------------
+Servo Output Channel 6: Coupling Mechanism for Tether
+
+1 Mixing Input (M: 1):
+Channel group 3 (manual passthrough), channel 5: AUX1
+
+M: 1
+S: 3 5   10000   10000      0  -10000  10000
